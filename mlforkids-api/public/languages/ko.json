@@ -994,6 +994,8 @@
             "DESCRIPTION_4": "All of this will help you to understand how <strong>large</strong> language models work in the real world."
         },
 
+        "REMOTE": {},
+
         "CORPUS": {
             "TITLE": "corpus",
             "ADD": "Add text",

@@ -6,7 +6,7 @@ describe('LanguageModelController', function () {
     var $scope;
 
     var authServiceMock, projectsServiceMock, trainingServiceMock,
-        wikipediaServiceMock, weatherServiceMock, languageModelServiceMock, txtServiceMock,
+        wikipediaServiceMock, weatherServiceMock, languageModelServiceMock, remoteLanguageModelServiceMock, txtServiceMock,
         ngramsServiceMock, utilServiceMock, loggerServiceMock, $mdDialogMock, $windowMock, $timeoutReal;
     var $stateParams;
 
@@ -14,6 +14,7 @@ describe('LanguageModelController', function () {
     var reloadSpy;
 
     beforeEach(module('app'));
+    beforeEach(module('ml4kTemplates'));
 
     beforeEach(inject(function (_$controller_, _$q_, _$rootScope_, _$timeout_) {
         $controller = _$controller_;
@@ -32,7 +33,7 @@ describe('LanguageModelController', function () {
 
         projectsServiceMock = jasmine.createSpyObj('projectsService', [
             'getProject', 'setLanguageModelType',
-            'storeSmallLanguageModelConfig', 'storeToyLanguageModelConfig'
+            'storeSmallLanguageModelConfig', 'storeToyLanguageModelConfig', 'storeRemoteLanguageModelConfig'
         ]);
 
         trainingServiceMock = jasmine.createSpyObj('trainingService', [
@@ -48,6 +49,12 @@ describe('LanguageModelController', function () {
         ]);
         languageModelServiceMock.getSupportedModels.and.returnValue($q.resolve([]));
         languageModelServiceMock.getAllModels.and.returnValue([]);
+
+        remoteLanguageModelServiceMock = jasmine.createSpyObj('remoteLanguageModelService', [ 'getModels', 'streamCompletion' ]);
+        remoteLanguageModelServiceMock.getModels.and.returnValue($q.resolve({
+            apiBaseUrl : 'http://teacher-laptop:8000/v1',
+            models : [ { id : 'school-model' } ]
+        }));
 
         txtServiceMock = jasmine.createSpyObj('txtService', ['getContents']);
 
@@ -80,6 +87,7 @@ describe('LanguageModelController', function () {
             wikipediaService : wikipediaServiceMock,
             weatherService : weatherServiceMock,
             languageModelService : languageModelServiceMock,
+            remoteLanguageModelService : remoteLanguageModelServiceMock,
             txtService : txtServiceMock,
             ngramsService : ngramsServiceMock,
             utilService : utilServiceMock,
@@ -160,6 +168,17 @@ describe('LanguageModelController', function () {
 
             expect(languageModelServiceMock.getSupportedModels).toHaveBeenCalled();
             expect(utilServiceMock.loadWebLlmProjectSupport).toHaveBeenCalled();
+        });
+
+        it('restores a configured remote model without loading WebLLM', function () {
+            createReadyController(baseProject({
+                modeltype : 'remote',
+                remote : { url : 'http://teacher-laptop:8000/v1', model : 'school-model' }
+            }));
+
+            expect($scope.phase).toBe($scope.PHASES.REMOTE.READY);
+            expect($scope.project.remote.model).toBe('school-model');
+            expect(utilServiceMock.loadWebLlmProjectSupport).not.toHaveBeenCalled();
         });
 
         it('records an error alert if fetching the profile fails', function () {
@@ -463,6 +482,161 @@ describe('LanguageModelController', function () {
             expect($scope.project.modeltype).toBe('small');
             expect($scope.phase).toBe($scope.PHASES.SMALL.ARCHITECTURE);
             expect($scope.loading).toBe(false);
+        });
+
+        it('sets up a remote model project without loading WebLLM', function () {
+            projectsServiceMock.setLanguageModelType.and.returnValue($q.resolve());
+            createReadyController(baseProject());
+
+            $scope.chooseModelType('remote');
+            digestTwice();
+
+            expect($scope.project.modeltype).toBe('remote');
+            expect($scope.project.remote).toEqual({
+                url : '', model : '', temperature : 1.0, topp : 1.0,
+                initialcontext : { state : 'none' }
+            });
+            expect($scope.phase).toBe($scope.PHASES.REMOTE.MODEL);
+            expect(utilServiceMock.loadWebLlmProjectSupport).not.toHaveBeenCalled();
+        });
+
+        it('discovers the models exposed by an oMLX URL and selects the only model', function () {
+            var project = baseProject({
+                modeltype : 'remote',
+                remote : { url : 'http://teacher-laptop:8000', model : '' }
+            });
+            createReadyController(project);
+
+            $scope.findRemoteModels();
+            digestTwice();
+
+            expect(remoteLanguageModelServiceMock.getModels).toHaveBeenCalledWith('http://teacher-laptop:8000');
+            expect($scope.project.remote.url).toBe('http://teacher-laptop:8000/v1');
+            expect($scope.project.remote.model).toBe('school-model');
+            expect($scope.remoteModels).toEqual([ { id : 'school-model' } ]);
+            expect($scope.remoteConnecting).toBe(false);
+        });
+
+        it('ignores an old model lookup when the server URL changes during discovery', function () {
+            var oldRequest = $q.defer();
+            remoteLanguageModelServiceMock.getModels.and.returnValues(oldRequest.promise, $q.resolve({
+                apiBaseUrl : 'http://new-server:8000/v1',
+                models : [ { id : 'new-model' } ]
+            }));
+            createReadyController(baseProject({
+                modeltype : 'remote', remote : { url : 'http://old-server:8000' }
+            }));
+
+            $scope.findRemoteModels();
+            digestTwice();
+            $scope.project.remote.url = 'http://new-server:8000';
+            $scope.remoteServerUrlChanged();
+            $scope.findRemoteModels();
+            digestTwice();
+
+            oldRequest.resolve({
+                apiBaseUrl : 'http://old-server:8000/v1',
+                models : [ { id : 'old-model' } ]
+            });
+            digestTwice();
+            expect($scope.project.remote.url).toBe('http://new-server:8000/v1');
+            expect($scope.project.remote.model).toBe('new-model');
+            expect($scope.remoteModels).toEqual([ { id : 'new-model' } ]);
+            expect($scope.remoteConnecting).toBe(false);
+        });
+
+        it('steps remote setup from model selection to temperature and initial context', function () {
+            createReadyController(baseProject({
+                modeltype : 'remote',
+                remote : { url : 'http://teacher-laptop:8000/v1', model : '' }
+            }));
+            $scope.remoteModels = [ { id : 'school-model' } ];
+            $scope.project.remote.model = 'school-model';
+
+            $scope.initRemoteModelTemperature();
+            expect($scope.phase).toBe($scope.PHASES.REMOTE.TEMPERATURE);
+
+            $scope.initRemoteModelContext();
+            expect($scope.phase).toBe($scope.PHASES.REMOTE.RAGCONTEXT);
+        });
+
+        it('clicks through the real remote wizard template from discovery to ready', inject(function ($compile, $templateCache) {
+            var project = baseProject({
+                modeltype : 'remote', storage : 'local', type : 'language',
+                remote : { url : '', model : '' }
+            });
+            projectsServiceMock.storeRemoteLanguageModelConfig.and.returnValue($q.resolve(project));
+            createReadyController(project);
+
+            var template = $templateCache.get('public/components/languagemodel/languagemodel.html');
+            var start = template.indexOf('<div class="modelstep" ng-if="phase === PHASES.REMOTE.MODEL');
+            var end = template.indexOf('<!--   TOY models', start);
+            expect(start).toBeGreaterThan(-1);
+            expect(end).toBeGreaterThan(start);
+            var element = $compile('<div>' + template.substring(start, end) + '</div>')($scope);
+            document.body.appendChild(element[0]);
+            try {
+                digestTwice();
+                var urlInput = element[0].querySelector('#remote-server-url');
+                expect(urlInput).not.toBeNull();
+                angular.element(urlInput).val('http://teacher-laptop:8000').triggerHandler('input');
+                digestTwice();
+                expect($scope.project.remote.url).toBe('http://teacher-laptop:8000');
+
+                element[0].querySelector('[ng-click="findRemoteModels()"]').click();
+                digestTwice();
+                expect($scope.project.remote.model).toBe('school-model');
+                expect(element[0].querySelector('#remote-model-select')).not.toBeNull();
+
+                element[0].querySelector('[ng-click="initRemoteModelTemperature()"]').click();
+                digestTwice();
+                expect($scope.phase).toBe($scope.PHASES.REMOTE.TEMPERATURE);
+                expect(element[0].querySelector('[ng-click="initRemoteModelContext()"]')).not.toBeNull();
+
+                element[0].querySelector('[ng-click="initRemoteModelContext()"]').click();
+                digestTwice();
+                expect($scope.phase).toBe($scope.PHASES.REMOTE.RAGCONTEXT);
+                element[0].querySelector('[ng-click="smallModelInitialContextSet(\'remote\')"]').click();
+                digestTwice();
+                expect(element[0].querySelector('[ng-click="setProjectReady()"]').disabled).toBe(true);
+                element[0].querySelector('[ng-click="smallModelInitialContextClear(\'remote\')"]').click();
+                digestTwice();
+
+                element[0].querySelector('[ng-click="setProjectReady()"]').click();
+                digestTwice();
+                expect($scope.phase).toBe($scope.PHASES.REMOTE.READY);
+                expect(projectsServiceMock.storeRemoteLanguageModelConfig).toHaveBeenCalled();
+            }
+            finally {
+                element.remove();
+            }
+        }));
+
+        it('saves the remote model URL and selected model when continuing to chat', function () {
+            var project = baseProject({
+                modeltype : 'remote',
+                remote : {
+                    url : 'http://teacher-laptop:8000/v1',
+                    model : 'school-model',
+                    temperature : 0.7,
+                    topp : 0.8,
+                    initialcontext : { state : 'provide', doc : { type : 'text', title : 'notes', contents : 'Context text' } }
+                }
+            });
+            projectsServiceMock.storeRemoteLanguageModelConfig.and.returnValue($q.resolve(project));
+            createReadyController(project);
+
+            $scope.setProjectReady();
+            digestTwice();
+
+            expect(projectsServiceMock.storeRemoteLanguageModelConfig).toHaveBeenCalledWith(project, {
+                url : 'http://teacher-laptop:8000/v1',
+                model : 'school-model',
+                temperature : 0.7,
+                topp : 0.8,
+                initialcontext : { state : 'provide', doc : { type : 'text', title : 'notes', contents : 'Context text' } }
+            });
+            expect($scope.phase).toBe($scope.PHASES.REMOTE.READY);
         });
 
         it('shows an error for an unrecognised model type', function () {

@@ -104,6 +104,9 @@ export const CSP_DIRECTIVES: Record<string, string[]> = {
         'https://huggingface.co',
         'https://cas-bridge.xethub.hf.co',
         'https://raw.githubusercontent.com',
+        // student-selected remote language-model servers (e.g. oMLX on a LAN)
+        'http:',
+        'https:',
         // used for accessing iTunes from Scratch
         'https://itunes.apple.com',
         'https://audio-ssl.itunes.apple.com',
@@ -210,4 +213,3 @@ export function setupUI(app: express.Application): void {
     const indexHtml: string = path.join(__dirname, '/../../../web/dynamic');
     app.use('/', compression(), express.static(indexHtml, { maxAge : constants.ONE_HOUR }));
 }
-

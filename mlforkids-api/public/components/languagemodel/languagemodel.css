@@ -204,6 +204,29 @@
     padding-right: 2em;
 }
 
+.languagemodelpage .remote-server-row {
+    margin: 1.25em 0.5em 0.5em;
+}
+
+.languagemodelpage .remote-server-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.languagemodelpage .remote-server-url {
+    flex: 1;
+    min-width: 0;
+    padding: 0.5em;
+    border: 1px solid #aaa;
+    border-radius: 4px;
+}
+
+.languagemodelpage .remote-server-instructions {
+    margin-top: 0.5em;
+    color: #555;
+}
+
 .languagemodelpage .modelstep .steprow .rowitem .contextinset {
     margin: 1em;
     padding: 1em;

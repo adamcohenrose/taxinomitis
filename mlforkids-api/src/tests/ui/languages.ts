@@ -69,7 +69,17 @@ describe('UI - NLS', () => {
     const NO_TRANSLATION_REQUIRED = [
         '.HELP.LOG',
         '.WORKSHEETS.LOCATELARRY.TEACHERSNOTES_URL',
-        '.DATASETS.DATA.FAKENEWS.ID'
+        '.DATASETS.DATA.FAKENEWS.ID',
+        // The remote-model connection flow initially uses the English
+        // fallback while translations are prepared.
+        '.LANGUAGEMODEL.TYPE.REMOTE',
+        '.LANGUAGEMODEL.REMOTE.TITLE',
+        '.LANGUAGEMODEL.REMOTE.DESCRIPTION',
+        '.LANGUAGEMODEL.REMOTE.URL',
+        '.LANGUAGEMODEL.REMOTE.FINDMODELS',
+        '.LANGUAGEMODEL.REMOTE.MODEL',
+        '.LANGUAGEMODEL.REMOTE.CONNECTING',
+        '.LANGUAGEMODEL.REMOTE.ACCESS'
     ];
 
     function compareKeys(obj1: any, obj2: any, obj2name: string, keypath = '') {

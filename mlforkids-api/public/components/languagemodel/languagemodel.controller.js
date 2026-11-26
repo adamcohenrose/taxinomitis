@@ -7,14 +7,14 @@
     LanguageModelController.$inject = [
         'authService', 'projectsService', 'trainingService',
         'wikipediaService', 'weatherService',
-        'languageModelService', 'txtService', 'ngramsService',
+        'languageModelService', 'remoteLanguageModelService', 'txtService', 'ngramsService',
         'utilService', 'loggerService',
         '$mdDialog', '$stateParams', '$scope', '$window', '$timeout', '$q'
     ];
 
     function LanguageModelController(authService, projectsService, trainingService,
                                      wikipediaService, weatherService,
-                                     languageModelService, txtService, ngramsService,
+                                     languageModelService, remoteLanguageModelService, txtService, ngramsService,
                                      utilService, loggerService,
                                      $mdDialog, $stateParams, $scope, $window, $timeout, $q) 
     {
@@ -83,6 +83,12 @@
                 RAGCONTEXT    : 'small_ragcontext',
                 TOOLS         : 'small_tools',
                 READY         : 'small_ready'
+            },
+            REMOTE : {
+                MODEL       : 'remote_model',
+                TEMPERATURE : 'remote_temperature',
+                RAGCONTEXT  : 'remote_ragcontext',
+                READY       : 'remote_ready'
             }
         };
 
@@ -101,6 +107,10 @@
         // small language models
         $scope.reconfiguring = false;
         $scope.generatedmessages = [];
+        $scope.remoteModels = [];
+        $scope.remoteConnecting = false;
+        let remoteModelsRequestId = 0;
+        let remoteAbortController;
 
         // y-axis scale for the model architecture charts - expanded when
         //  a model too big for the normal scale is selected
@@ -198,6 +208,9 @@
                 else if ($scope.project.modeltype === 'toy') {
                     return restoreSavedToyLanguageModel();
                 }
+                else if ($scope.project.modeltype === 'remote') {
+                    return restoreSavedRemoteLanguageModel();
+                }
                 else {
                     // incorrect project type - message will be shown
                 }
@@ -289,6 +302,19 @@
                 });
         }
 
+        function restoreSavedRemoteLanguageModel() {
+            $scope.project.remote = angular.extend({
+                url : '',
+                model : '',
+                temperature : 1.0,
+                topp : 1.0,
+                initialcontext : { state : 'none' }
+            }, $scope.project.remote || {});
+
+            $scope.phase = $scope.project.remote.url && $scope.project.remote.model ?
+                $scope.PHASES.REMOTE.READY : $scope.PHASES.REMOTE.MODEL;
+        }
+
         // -------------------------------------------------------------------
 
 
@@ -325,6 +351,9 @@
                     else if (type === 'small') {
                         return setupSlmSupport();
                     }
+                    else if (type === 'remote') {
+                        return $q.resolve();
+                    }
                     else {
                         loggerService.error('[ml4klanguage] unexpected model type', type);
                         throw new Error('Unexpected model type');
@@ -347,6 +376,17 @@
                         };
                         $scope.phase = $scope.PHASES.SMALL.ARCHITECTURE;
                     }
+                    else if (type === 'remote') {
+                        $scope.project.remote = {
+                            url : '',
+                            model : '',
+                            temperature : 1.0,
+                            topp : 1.0,
+                            initialcontext : { state : 'none' }
+                        };
+                        $scope.remoteModels = [];
+                        $scope.phase = $scope.PHASES.REMOTE.MODEL;
+                    }
 
                     $scope.project.modeltype = type;
 
@@ -358,6 +398,73 @@
                     loggerService.error('[ml4klanguage] Failed to choose model type', err);
                     $scope.loading = false;
                     displayAlert('errors', 500, err);
+                });
+        };
+
+        $scope.remoteServerUrlChanged = function () {
+            remoteModelsRequestId++;
+            $scope.remoteConnecting = false;
+            $scope.remoteModels = [];
+            $scope.project.remote.model = '';
+            $scope.resetContextWindow();
+            $scope.phase = $scope.PHASES.REMOTE.MODEL;
+        };
+
+        $scope.remoteModelChanged = function () {
+            $scope.resetContextWindow();
+            $scope.phase = $scope.PHASES.REMOTE.MODEL;
+        };
+
+        $scope.initRemoteModelTemperature = function () {
+            $scope.phase = $scope.PHASES.REMOTE.TEMPERATURE;
+        };
+
+        $scope.initRemoteModelContext = function () {
+            $scope.phase = $scope.PHASES.REMOTE.RAGCONTEXT;
+        };
+
+        $scope.findRemoteModels = function () {
+            if ($scope.remoteConnecting || $scope.loading || !$scope.project.remote.url) {
+                return;
+            }
+
+            $scope.remoteConnecting = true;
+            $scope.remoteModels = [];
+            const requestId = ++remoteModelsRequestId;
+            const serverUrl = $scope.project.remote.url;
+            const previouslySelectedModel = $scope.project.remote.model;
+
+            return $q.when()
+                .then(() => remoteLanguageModelService.getModels(serverUrl))
+                .then((result) => {
+                    if (requestId !== remoteModelsRequestId) {
+                        return;
+                    }
+                    $scope.project.remote.url = result.apiBaseUrl;
+                    $scope.remoteModels = result.models;
+
+                    const selectedModel = result.models.find((model) => model.id === previouslySelectedModel);
+                    if (selectedModel) {
+                        $scope.project.remote.model = selectedModel.id;
+                    }
+                    else if (result.models.length === 1) {
+                        $scope.project.remote.model = result.models[0].id;
+                    }
+                    else {
+                        $scope.project.remote.model = '';
+                    }
+                })
+                .catch((err) => {
+                    if (requestId !== remoteModelsRequestId) {
+                        return;
+                    }
+                    loggerService.error('[ml4klanguage] Failed to connect to remote model server', err);
+                    displayAlert('errors', 400, err);
+                })
+                .finally(() => {
+                    if (requestId === remoteModelsRequestId) {
+                        $scope.remoteConnecting = false;
+                    }
                 });
         };
 
@@ -1038,47 +1145,58 @@
             loggerService.debug('[ml4klanguage] initSmallModelContext');
             $scope.phase = $scope.PHASES.SMALL.RAGCONTEXT;
         };
-        $scope.smallModelInitialContextClear = function () {
+        function getModelConfigForContext(modelType) {
+            return modelType === 'remote' ? $scope.project.remote : $scope.project.slm;
+        }
+        function saveModelConfigForContext(modelType) {
+            return modelType === 'remote' ? saveRemoteLanguageModel() : saveSmallLanguageModel();
+        }
+        function saveContextConfigIfReady(modelType) {
+            if ((modelType === 'remote' && $scope.phase === $scope.PHASES.REMOTE.READY) ||
+                (modelType === 'small' && $scope.phase === $scope.PHASES.SMALL.READY))
+            {
+                return saveModelConfigForContext(modelType);
+            }
+        }
+        function getInitialContextFor(modelType) {
+            const modelConfig = getModelConfigForContext(modelType);
+            return modelConfig && modelConfig.initialcontext;
+        }
+        function setInitialContextState(modelType, state) {
+            $scope.resetContextWindow();
+            const modelConfig = getModelConfigForContext(modelType);
+            if (!modelConfig.initialcontext) {
+                modelConfig.initialcontext = {};
+            }
+            modelConfig.initialcontext.state = state;
+            return saveContextConfigIfReady(modelType);
+        }
+
+        $scope.smallModelInitialContextClear = function (modelType) {
+            return setInitialContextState(modelType === 'remote' ? 'remote' : 'small', 'none');
+        };
+        $scope.smallModelInitialContextSet = function (modelType) {
+            return setInitialContextState(modelType === 'remote' ? 'remote' : 'small', 'provide');
+        };
+        $scope.removeContextDoc = function (modelType) {
+            modelType = modelType === 'remote' ? 'remote' : 'small';
             $scope.resetContextWindow();
 
-            if (!$scope.project.slm.initialcontext) {
-                $scope.project.slm.initialcontext = {};
+            const initialcontext = getInitialContextFor(modelType);
+            if (initialcontext) {
+                delete initialcontext.doc;
             }
-            $scope.project.slm.initialcontext.state = 'none';
 
-            if ($scope.phase === $scope.PHASES.SMALL.READY) {
-                saveSmallLanguageModel();
-            }
+            return saveContextConfigIfReady(modelType);
         };
-        $scope.smallModelInitialContextSet = function () {
-            $scope.resetContextWindow();
-
-            if (!$scope.project.slm.initialcontext) {
-                $scope.project.slm.initialcontext = {};
-            }
-            $scope.project.slm.initialcontext.state = 'provide';
-
-            if ($scope.phase === $scope.PHASES.SMALL.READY) {
-                saveSmallLanguageModel();
-            }
-        };
-        $scope.removeContextDoc = function () {
-            $scope.resetContextWindow();
-
-            if ($scope.project.slm.initialcontext) {
-                delete $scope.project.slm.initialcontext.doc;
-            }
-
-            if ($scope.phase === $scope.PHASES.SMALL.READY) {
-                saveSmallLanguageModel();
-            }
-        };
-        $scope.addContextText = function (ev) {
+        $scope.addContextText = function (ev, modelType) {
+            modelType = modelType === 'remote' ? 'remote' : 'small';
+            const initialcontext = getInitialContextFor(modelType);
             $mdDialog.show({
                 locals : {
                     dlgtitle : 'LANGUAGEMODEL.INITIALCONTEXT.ADDTEXT',
                     placeholder : 'Initial context text',
-                    contents : $scope.project.slm.initialcontext && $scope.project.slm.initialcontext.doc && $scope.project.slm.initialcontext.doc.contents ? $scope.project.slm.initialcontext.doc.contents : '',
+                    contents : initialcontext && initialcontext.doc && initialcontext.doc.contents ? initialcontext.doc.contents : '',
                 },
                 controller : function ($scope, locals) {
                     $scope.dlgtitle = locals.dlgtitle;
@@ -1102,7 +1220,7 @@
             })
             .then(
                 function (resp) {
-                    $scope.project.slm.initialcontext = {
+                    getModelConfigForContext(modelType).initialcontext = {
                         state : 'provide',
                         doc : {
                             type : 'text',
@@ -1111,23 +1229,25 @@
                         }
                     };
                     $scope.resetContextWindow();
-                    saveSmallLanguageModel();
+                    saveModelConfigForContext(modelType);
                 },
                 function() {
                     // cancelled. do nothing
                 }
             );
         };
-        $scope.addContextFile = function (ev) {
-            if (ev.currentTarget && ev.currentTarget.files) {
-                return txtService.getContents(ev.currentTarget.files)
+        $scope.addContextFile = function (ev, input, modelType) {
+            modelType = modelType === 'remote' ? 'remote' : 'small';
+            const files = input && input.files ? input.files : ev.currentTarget && ev.currentTarget.files;
+            if (files) {
+                return txtService.getContents(files)
                     .then((allFiles) => {
-                        $scope.project.slm.initialcontext = {
+                        getModelConfigForContext(modelType).initialcontext = {
                             state : 'provide',
                             doc : allFiles[0]
                         };
 
-                        saveSmallLanguageModel();
+                        saveModelConfigForContext(modelType);
                         $scope.resetContextWindow();
                     })
                     .catch((err) => {
@@ -1140,18 +1260,20 @@
                     });
             }
         };
-        $scope.addContextWikipediaPage = function (ev) {
+        $scope.addContextWikipediaPage = function (ev, modelType) {
+            modelType = modelType === 'remote' ? 'remote' : 'small';
+            const initialcontext = getInitialContextFor(modelType);
             $mdDialog.show({
                 locals : {
                     dlgtitle : 'LANGUAGEMODEL.INITIALCONTEXT.ADDWIKIPEDIA',
-                    title : $scope.project.slm.initialcontext &&
-                                $scope.project.slm.initialcontext.doc &&
-                                $scope.project.slm.initialcontext.doc.contents &&
-                                $scope.project.slm.initialcontext.doc.type === 'wikipedia' ? $scope.project.slm.initialcontext.doc.title : '',
-                    contents : $scope.project.slm.initialcontext &&
-                                $scope.project.slm.initialcontext.doc &&
-                                $scope.project.slm.initialcontext.doc.contents &&
-                                $scope.project.slm.initialcontext.doc.type === 'wikipedia' ? $scope.project.slm.initialcontext.doc.contents : '',
+                    title : initialcontext &&
+                                initialcontext.doc &&
+                                initialcontext.doc.contents &&
+                                initialcontext.doc.type === 'wikipedia' ? initialcontext.doc.title : '',
+                    contents : initialcontext &&
+                                initialcontext.doc &&
+                                initialcontext.doc.contents &&
+                                initialcontext.doc.type === 'wikipedia' ? initialcontext.doc.contents : '',
                 },
                 controller : function ($scope, locals) {
                     $scope.dlgtitle = locals.dlgtitle;
@@ -1181,7 +1303,7 @@
             })
             .then(
                 function (resp) {
-                    $scope.project.slm.initialcontext = {
+                    getModelConfigForContext(modelType).initialcontext = {
                         state : 'provide',
                         doc : {
                             type : 'wikipedia',
@@ -1190,7 +1312,7 @@
                         }
                     };
 
-                    saveSmallLanguageModel();
+                    saveModelConfigForContext(modelType);
                     $scope.resetContextWindow();
                 },
                 function() {
@@ -1299,6 +1421,19 @@
                     return updated;
                 });
         }
+        function saveRemoteLanguageModel() {
+            return projectsService.storeRemoteLanguageModelConfig($scope.project, {
+                    url : $scope.project.remote.url,
+                    model : $scope.project.remote.model,
+                    temperature : $scope.project.remote.temperature,
+                    topp : $scope.project.remote.topp,
+                    initialcontext : $scope.project.remote.initialcontext
+                })
+                .then((updated) => {
+                    updated.remote.ready = true;
+                    return updated;
+                });
+        }
 
         // -------------------------------------------------------------------
 
@@ -1335,6 +1470,23 @@
                         displayAlert('errors', 500, err);
                     });
             }
+            else if ($scope.project.modeltype === 'remote') {
+                if (!$scope.project.remote.url || !$scope.project.remote.model) {
+                    return;
+                }
+
+                saveRemoteLanguageModel()
+                    .then((updated) => {
+                        $scope.$applyAsync(() => {
+                            $scope.phase = $scope.PHASES.REMOTE.READY;
+                            $scope.project = updated;
+                        });
+                    })
+                    .catch((err) => {
+                        loggerService.error('[ml4klanguage] error saving remote model', err);
+                        displayAlert('errors', 500, err);
+                    });
+            }
         };
 
         // -------------------------------------------------------------------
@@ -1365,6 +1517,9 @@
             }
             else if ($scope.project.modeltype === 'small') {
                 submitFn = useSmallLanguageModel(prompt);
+            }
+            else if ($scope.project.modeltype === 'remote') {
+                submitFn = useRemoteLanguageModel(prompt);
             }
 
             submitFn
@@ -1586,10 +1741,11 @@
         };
 
         function useRagContext() {
-            return $scope.project.slm.initialcontext &&
-                   $scope.project.slm.initialcontext.state === 'provide' &&
-                   $scope.project.slm.initialcontext.doc &&
-                   $scope.project.slm.initialcontext.doc.contents;
+            const initialcontext = getInitialContextFor($scope.project.modeltype === 'remote' ? 'remote' : 'small');
+            return initialcontext &&
+                   initialcontext.state === 'provide' &&
+                   initialcontext.doc &&
+                   initialcontext.doc.contents;
         }
 
         function startNewContext() {
@@ -1621,7 +1777,12 @@
         };
 
         $scope.stopGenerating = function () {
-            $scope.webllmEngine.interruptGenerate();
+            if (remoteAbortController) {
+                remoteAbortController.abort();
+            }
+            else if ($scope.webllmEngine) {
+                $scope.webllmEngine.interruptGenerate();
+            }
         };
 
         function scrollToNewMessage () {
@@ -1706,6 +1867,76 @@
                 else {
                     throw err;
                 }
+            }
+        }
+
+        async function useRemoteLanguageModel(prompt) {
+            if (!$scope.project.remote || !$scope.project.remote.url || !$scope.project.remote.model) {
+                throw new Error('Connect to an oMLX server and choose a model before sending a prompt.');
+            }
+
+            if ($scope.generatedmessages.length === 0) {
+                $scope.generatedmessages = startNewContext();
+            }
+
+            const ragPrompt = $scope.generatedmessages.length === 1 && useRagContext();
+            const initialcontext = getInitialContextFor('remote');
+            $scope.generatedmessages.push({
+                role : 'user',
+                render : prompt,
+                content : ragPrompt ?
+                    'Question: ' + prompt + '\n\nContext:\n' + initialcontext.doc.contents :
+                    prompt
+            });
+            scrollToNewMessage();
+
+            const assistantMessageIdx = $scope.generatedmessages.push({
+                role : 'assistant', content : '', render : '...', inprogress : true
+            }) - 1;
+            remoteAbortController = new $window.AbortController();
+
+            $scope.$applyAsync(() => {
+                $scope.streaming = true;
+            });
+
+            try {
+                await remoteLanguageModelService.streamCompletion(
+                    $scope.project.remote.url,
+                    $scope.project.remote.model,
+                    getMessagesPayload(),
+                    $scope.project.remote.temperature,
+                    $scope.project.remote.topp,
+                    remoteAbortController.signal,
+                    (delta) => {
+                        $scope.$applyAsync(() => {
+                            const message = $scope.generatedmessages[assistantMessageIdx];
+                            message.content += delta;
+                            message.render = message.content.replace(/\n/g, '<br>');
+                        });
+                    }
+                );
+            }
+            catch (err) {
+                if (!err || err.name !== 'AbortError') {
+                    throw err;
+                }
+            }
+            finally {
+                $scope.$applyAsync(() => {
+                    const message = $scope.generatedmessages[assistantMessageIdx];
+                    if (message) {
+                        if (message.content.length === 0) {
+                            // A failed or interrupted request with no reply is not
+                            // part of the conversation sent with the next prompt.
+                            $scope.generatedmessages.splice(assistantMessageIdx - 1, 2);
+                        }
+                        else {
+                            delete message.inprogress;
+                        }
+                    }
+                    $scope.streaming = false;
+                });
+                remoteAbortController = undefined;
             }
         }
 

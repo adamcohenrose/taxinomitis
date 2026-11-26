@@ -30,7 +30,7 @@
     <div ng-if="project" class="languagemodelpage">
 
         <!-- ******************************************************* -->
-        <!--   type of language model to prepare : toy vs SLM        -->
+        <!--   type of language model to prepare                     -->
         <!-- ******************************************************* -->
 
         <div class="modelstep">
@@ -48,6 +48,10 @@
                     ng-class="{'btn-primary' : project.modeltype === 'large' || modeltype === 'large' }"
                     ng-disabled="project.modeltype && project.modeltype !== 'large'"
                     ng-click="modelTypeSwitch('large')"></button>
+                <button type="button" class="btn btn-default" translate="LANGUAGEMODEL.TYPE.REMOTE"
+                    ng-class="{'btn-primary' : project.modeltype === 'remote' || modeltype === 'remote' }"
+                    ng-disabled="project.modeltype && project.modeltype !== 'remote'"
+                    ng-click="modelTypeSwitch('remote')"></button>
                 <strong class="model-name-label" translate="LANGUAGEMODEL.NAME"></strong>
             </div>
             <div class="stepexplanation" ng-if="phase === PHASES.INITIAL" translate="LANGUAGEMODEL.TYPE.DESCRIPTION_1"></div>
@@ -73,6 +77,141 @@
             <div class="stepheading" translate="LANGUAGEMODEL.LARGE.TITLE">Large Language Models</div>
             <div class="stepexplanation" translate="LANGUAGEMODEL.LARGE.DESCRIPTION"></div>
             <div class="stepexplanation"><a href="https://projects.raspberrypi.org/en/projects/llm-rpi">projects.raspberrypi.org/en/projects/llm-rpi</a></div>
+        </div>
+
+        <!-- ******************************************************* -->
+        <!--   REMOTE MODEL - CONNECT TO AN OMLX SERVER              -->
+        <!-- ******************************************************* -->
+
+        <div class="modelstep" ng-if="phase === PHASES.REMOTE.MODEL || phase === PHASES.REMOTE.TEMPERATURE || phase === PHASES.REMOTE.RAGCONTEXT || phase === PHASES.REMOTE.READY">
+            <div class="resetlink" ng-if="phase === PHASES.REMOTE.READY" ng-click="review(PHASES.REMOTE.MODEL)" translate="LANGUAGEMODEL.REVIEW"></div>
+            <div class="stepheading" translate="LANGUAGEMODEL.REMOTE.TITLE"></div>
+            <div class="stepexplanation" translate="LANGUAGEMODEL.REMOTE.DESCRIPTION"></div>
+            <div class="remote-server-row">
+                <label for="remote-server-url" translate="LANGUAGEMODEL.REMOTE.URL"></label>
+                <div class="remote-server-controls">
+                    <input id="remote-server-url" type="url" class="remote-server-url"
+                        ng-model="project.remote.url"
+                        ng-change="remoteServerUrlChanged()"
+                        placeholder="http://teacher-laptop:8000"
+                        autocomplete="url">
+                    <button type="button" class="btn btn-default"
+                        ng-click="findRemoteModels()"
+                        ng-disabled="remoteConnecting || loading || !project.remote.url"
+                        translate="LANGUAGEMODEL.REMOTE.FINDMODELS"></button>
+                </div>
+                <div class="stepexplanation remote-server-instructions" translate="LANGUAGEMODEL.REMOTE.ACCESS"></div>
+            </div>
+            <div class="steprow" ng-if="remoteConnecting">
+                <div class="rowitem stepexplanation" translate="LANGUAGEMODEL.REMOTE.CONNECTING"></div>
+            </div>
+            <div class="steprow" ng-if="remoteModels.length > 0">
+                <div class="rowitem">
+                    <label for="remote-model-select" translate="LANGUAGEMODEL.REMOTE.MODEL"></label>
+                    <md-select id="remote-model-select" ng-model="project.remote.model" ng-change="remoteModelChanged()" ng-disabled="remoteConnecting">
+                        <md-option ng-repeat="remoteModel in remoteModels" ng-value="remoteModel.id">{{ remoteModel.id }}</md-option>
+                    </md-select>
+                </div>
+            </div>
+            <div class="steprow" ng-if="remoteModels.length === 0 && project.remote.model">
+                <div class="rowitem">
+                    <strong translate="LANGUAGEMODEL.REMOTE.MODEL"></strong>
+                    {{ project.remote.model }}
+                </div>
+            </div>
+        </div>
+
+        <div class="modelstep" ng-if="phase === PHASES.REMOTE.TEMPERATURE || phase === PHASES.REMOTE.RAGCONTEXT || phase === PHASES.REMOTE.READY">
+            <div class="resetlink" ng-if="phase === PHASES.REMOTE.READY" ng-click="review(PHASES.REMOTE.TEMPERATURE)" translate="LANGUAGEMODEL.REVIEW"></div>
+            <div class="steprow">
+                <div class="rowitem multicol">
+                    <div class="stepheading" translate="LANGUAGEMODEL.TEMPERATURE.TITLE"></div>
+                    <md-slider min="0.1" max="1.0" step="0.1" ng-model="project.remote.temperature" ng-disabled="remoteConnecting || generating"></md-slider>
+                    <div class="slider-labels">
+                        <div class="slider-label-left" translate="LANGUAGEMODEL.TEMPERATURE.LOW"></div>
+                        <div class="slider-label-right" translate="LANGUAGEMODEL.TEMPERATURE.HIGH"></div>
+                    </div>
+                    <div class="stepexplanation" ng-if="phase === PHASES.REMOTE.TEMPERATURE" translate="LANGUAGEMODEL.TEMPERATURE.DESCRIPTION_1"></div>
+                    <div class="stepexplanation" ng-if="phase === PHASES.REMOTE.TEMPERATURE" translate="LANGUAGEMODEL.TEMPERATURE.DESCRIPTION_2"></div>
+                </div>
+                <div class="rowitem multicol">
+                    <div class="stepheading" translate="LANGUAGEMODEL.TOPP.TITLE"></div>
+                    <md-slider min="0.1" max="1.0" step="0.1" ng-model="project.remote.topp" ng-disabled="remoteConnecting || generating"></md-slider>
+                    <div class="slider-labels">
+                        <div class="slider-label-left" translate="LANGUAGEMODEL.TEMPERATURE.LOW"></div>
+                        <div class="slider-label-right" translate="LANGUAGEMODEL.TEMPERATURE.HIGH"></div>
+                    </div>
+                    <div class="stepexplanation" ng-if="phase === PHASES.REMOTE.TEMPERATURE" translate="LANGUAGEMODEL.TOPP.DESCRIPTION_1"></div>
+                    <div class="stepexplanation" ng-if="phase === PHASES.REMOTE.TEMPERATURE" translate="LANGUAGEMODEL.TOPP.DESCRIPTION_2"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="nextstep" ng-if="phase === PHASES.REMOTE.TEMPERATURE">
+            <button type="button" class="btn btn-primary" translate="APP.NEXT"
+                ng-click="initRemoteModelContext()"></button>
+        </div>
+
+        <div class="modelstep" ng-if="phase === PHASES.REMOTE.RAGCONTEXT || phase === PHASES.REMOTE.READY">
+            <div class="resetlink" ng-if="phase === PHASES.REMOTE.READY" ng-click="review(PHASES.REMOTE.RAGCONTEXT)" translate="LANGUAGEMODEL.REVIEW"></div>
+            <div class="steprow">
+                <div class="rowitem context-controls">
+                    <div class="stepheading" translate="LANGUAGEMODEL.INITIALCONTEXT.TITLE"></div>
+                    <button type="button" class="btn btn-default btn-wide"
+                        ng-class="{'btn-primary' : project.remote.initialcontext && project.remote.initialcontext.state === 'none' }"
+                        ng-click="smallModelInitialContextClear('remote')"
+                        ng-disabled="remoteConnecting || generating || (project.remote.initialcontext && project.remote.initialcontext.state === 'none')">
+                        <strong>No</strong> initial context
+                    </button>
+                    <button type="button" class="btn btn-default btn-wide"
+                        ng-class="{'btn-primary' : project.remote.initialcontext && project.remote.initialcontext.state === 'provide' }"
+                        ng-click="smallModelInitialContextSet('remote')"
+                        ng-disabled="remoteConnecting || generating || (project.remote.initialcontext && project.remote.initialcontext.state === 'provide')">
+                        <strong>Use</strong> initial context
+                    </button>
+                    <div class="contextinset"
+                        ng-if="project.remote.initialcontext && project.remote.initialcontext.state === 'provide' && project.remote.initialcontext.doc">
+                        <span class="glyphicon glyphicon-remove-circle deletetext" aria-hidden="true"
+                            ng-click="removeContextDoc('remote')"
+                            ng-hide="phase !== PHASES.REMOTE.RAGCONTEXT"></span>
+                        <img ng-src="static/images/{{project.remote.initialcontext.doc.type}}.png"
+                             class="trainingImageThumbnail" alt="text">
+                        <div class="documentlabel">{{ project.remote.initialcontext.doc.title }}</div>
+                    </div>
+                    <div class="context-buttons" ng-if="phase === PHASES.REMOTE.RAGCONTEXT && project.remote.initialcontext && project.remote.initialcontext.state === 'provide'">
+                        <div class="btn newexamplebutton" ng-click="addContextText($event, 'remote')">
+                            <div class="newexampleicon">+</div>
+                            <div class="newexamplelabel">use text</div>
+                        </div>
+                        <input id="remote-context-file-upload" type="file" accept=".txt"
+                            class="file-upload-hidden" data-label="add file"
+                            onchange="angular.element(this).scope().addContextFile(event, this, 'remote')"/>
+                        <label class="btn newexamplebutton" for="remote-context-file-upload">
+                            <div class="thin buttonicon glyphicon glyphicon-open-file"></div>
+                            <div class="newexamplelabel">use file</div>
+                        </label>
+                        <div class="btn newexamplebutton" ng-click="addContextWikipediaPage($event, 'remote')">
+                            <div class="newexampleicon wikipedia-icon">W</div>
+                            <div class="newexamplelabel">use Wikipedia</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="rowitem">
+                    <div class="stepexplanation" ng-if="phase === PHASES.REMOTE.RAGCONTEXT" translate="LANGUAGEMODEL.INITIALCONTEXT.DESCRIPTION"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="nextstep" ng-if="phase === PHASES.REMOTE.MODEL">
+            <button type="button" class="btn btn-primary" translate="APP.NEXT"
+                ng-disabled="loading || remoteConnecting || remoteModels.length === 0 || !project.remote.model"
+                ng-click="initRemoteModelTemperature()"></button>
+        </div>
+
+        <div class="nextstep" ng-if="phase === PHASES.REMOTE.RAGCONTEXT">
+            <button type="button" class="btn btn-primary" translate="APP.NEXT"
+                ng-disabled="project.remote.initialcontext.state === 'provide' && !project.remote.initialcontext.doc"
+                ng-click="setProjectReady()"></button>
         </div>
 
 
@@ -630,19 +769,19 @@
         <!--   testing                                               -->
         <!-- ******************************************************* -->
 
-        <div ng-if="phase === PHASES.TOY.READY || phase === PHASES.SMALL.READY" class="testing-container">
+        <div ng-if="phase === PHASES.TOY.READY || phase === PHASES.SMALL.READY || phase === PHASES.REMOTE.READY" class="testing-container">
             <div class="testing-input-row">
                 <div class="stepheading" translate="LANGUAGEMODEL.TESTING.TITLE"></div>
                 <input ng-model="prompt.message" ng-keypress="$event.which === 13 && testModel()" class="testing-input">
                 <button type="button" class="btn"
                     translate="{{ streaming ? 'LANGUAGEMODEL.TESTING.STOP' : 'LANGUAGEMODEL.TESTING.RESET' }}"
-                    ng-if="project.modeltype === 'small'"
+                    ng-if="project.modeltype === 'small' || project.modeltype === 'remote'"
                     ng-click="streaming ? stopGenerating() : resetContextWindow()"
                     ng-disabled="(generating && !streaming) || loading || generatedmessages.length === 0"></button>
                 <button type="button" translate="LANGUAGEMODEL.TESTING.GENERATE"
                     class="btn btn-primary"
                     ng-click="testModel()"
-                    ng-disabled="!prompt.message || prompt.message.trim().length === 0 || generating || loading || (project.slm.download >= 0 && project.slm.download < 100)"></button>
+                    ng-disabled="!prompt.message || prompt.message.trim().length === 0 || generating || loading || (project.modeltype === 'small' && project.slm.download >= 0 && project.slm.download < 100)"></button>
             </div>
             <div class="testfeedback" ng-if="testfeedbackmoretokens" translate="LANGUAGEMODEL.TESTING.ERROR.TOOSHORT"></div>
             <div class="testfeedback" ng-if="testfeedbacknomatch"    translate="LANGUAGEMODEL.TESTING.ERROR.NOTFOUND"></div>
@@ -693,7 +832,7 @@
                 </div>
             </div>
             <!-- for small models render the text in HTML divs -->
-            <div id="smallmodelmessages" ng-if="project.modeltype === 'small'" class="generatedtext" ng-class="{'placeholder' : !textgenerated || generating }">
+            <div id="smallmodelmessages" ng-if="project.modeltype === 'small' || project.modeltype === 'remote'" class="generatedtext" ng-class="{'placeholder' : !textgenerated || generating }">
                 <div ng-if="generatedmessages.length === 0">Generated text</div>
                 <div ng-repeat="generatedmessage in generatedmessages track by $index">
                     <div ng-if="generatedmessage.role === 'user'" class="userpromptcontainer">

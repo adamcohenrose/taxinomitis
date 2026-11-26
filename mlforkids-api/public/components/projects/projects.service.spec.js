@@ -12,7 +12,8 @@ describe('projectsService', function () {
         browserStorageServiceMock = jasmine.createSpyObj('browserStorageService', [
             'getProjects', 'idIsLocal', 'getProject', 'deleteProject', 'addLabel', 'addCloudRefToProject',
             'addProject', 'deleteLabel', 'getLabelCounts', 'countTrainingData', 'addMetadataToProject',
-            'setLanguageModelType', 'storeSmallLanguageModelConfig', 'storeToyLanguageModelConfig'
+            'setLanguageModelType', 'storeSmallLanguageModelConfig', 'storeToyLanguageModelConfig',
+            'storeRemoteLanguageModelConfig'
         ]);
 
         module('app', function ($provide) {
@@ -499,6 +500,16 @@ describe('projectsService', function () {
 
             expect(browserStorageServiceMock.storeToyLanguageModelConfig)
                 .toHaveBeenCalledWith(12, { seed : 1 });
+        });
+
+        it('stores the remote language model configuration', function () {
+            browserStorageServiceMock.storeRemoteLanguageModelConfig.and.returnValue($q.resolve({}));
+
+            projectsService.storeRemoteLanguageModelConfig(languageProject, { url : 'http://teacher:8000/v1', model : 'model1' });
+            $rootScope.$digest();
+
+            expect(browserStorageServiceMock.storeRemoteLanguageModelConfig)
+                .toHaveBeenCalledWith(12, { url : 'http://teacher:8000/v1', model : 'model1' });
         });
 
         it('rejects for a project that is not a language project', function () {

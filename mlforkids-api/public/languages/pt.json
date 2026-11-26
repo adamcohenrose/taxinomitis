@@ -995,6 +995,8 @@
             "DESCRIPTION_4": "Tudo isso vai ajudar-te a entender como os grandes modelos de linguagem funcionam no mundo real."
         },
 
+        "REMOTE": {},
+
         "CORPUS": {
             "TITLE": "corpus",
             "ADD": "Adicionar texto",

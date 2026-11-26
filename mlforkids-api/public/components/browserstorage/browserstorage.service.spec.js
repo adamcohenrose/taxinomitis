@@ -79,6 +79,31 @@ describe('browserStorageService', function () {
         }, attrs || {});
     }
 
+    describe('remote language model project settings', function () {
+
+        it('persists the selected oMLX URL and model on a local language project', async function () {
+            var project = await browserStorageService.addProject(newProject({ type : 'language' }));
+            var remoteConfig = {
+                url : 'http://teacher-laptop:8000/v1',
+                model : 'school-model',
+                temperature : 0.7,
+                topp : 0.8,
+                initialcontext : {
+                    state : 'provide',
+                    doc : { type : 'text', title : 'notes', contents : 'Context text' }
+                }
+            };
+
+            await browserStorageService.setLanguageModelType(project.id, 'remote');
+            await browserStorageService.storeRemoteLanguageModelConfig(project.id, remoteConfig);
+
+            var restored = await browserStorageService.getProject(project.id);
+            expect(restored.modeltype).toBe('remote');
+            expect(restored.remote).toEqual(remoteConfig);
+        });
+
+    });
+
     function databaseExists(name) {
         return window.indexedDB.databases().then(function (dbs) {
             return dbs.some(function (db) { return db.name === name; });

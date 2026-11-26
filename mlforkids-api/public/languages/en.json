@@ -988,6 +988,7 @@
             "TITLE": "Type of language model",
             "TOY": "Toy",
             "SMALL": "Small",
+            "REMOTE": "Remote model",
             "LARGE": "Large",
             "DESCRIPTION_1": "Computers can look for patterns in large numbers of documents. Language models generate text by using those statistical patterns to predict what word could come next.",
             "DESCRIPTION_2": "Creating a <strong>toy</strong> language model will show you how this works, and see the types of patterns computers look for (in documents you choose yourself).",
@@ -1076,6 +1077,16 @@
         "LARGE": {
             "TITLE": "Large Language Models",
             "DESCRIPTION": "If you would like to run your own large language model, you can find instructions for how to get started at:"
+        },
+
+        "REMOTE": {
+            "TITLE": "Connect to a remote language model",
+            "DESCRIPTION": "Use a model running on your teacher's computer with oMLX.",
+            "URL": "oMLX server URL",
+            "FINDMODELS": "Find models",
+            "MODEL": "Choose a model",
+            "CONNECTING": "Connecting to the oMLX server...",
+            "ACCESS": "Ask your teacher for the server's LAN URL. The oMLX server must listen on the school network, allow unauthenticated inference and browser access (CORS). If this page uses HTTPS, the oMLX URL must also use HTTPS."
         },
 
         "TESTING": {

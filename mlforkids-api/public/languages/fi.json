@@ -995,6 +995,8 @@
             "DESCRIPTION_4": "Kaikki tämä auttaa ymmärtämään, miten <strong>suuret</strong> kielimallit toimivat oikeassa maailmassa."
         },
 
+        "REMOTE": {},
+
         "CORPUS": {
             "TITLE": "tekstikorpus",
             "ADD": "Lisää tekstiä",

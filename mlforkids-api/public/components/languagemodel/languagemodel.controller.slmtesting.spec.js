@@ -6,7 +6,7 @@ describe('LanguageModelController - small model testing', function () {
     var $scope;
 
     var authServiceMock, projectsServiceMock, trainingServiceMock,
-        wikipediaServiceMock, weatherServiceMock, languageModelServiceMock, txtServiceMock,
+        wikipediaServiceMock, weatherServiceMock, languageModelServiceMock, remoteLanguageModelServiceMock, txtServiceMock,
         utilServiceMock, loggerServiceMock, $mdDialogMock, $windowMock, $timeoutReal;
     var $stateParams;
 
@@ -32,7 +32,7 @@ describe('LanguageModelController - small model testing', function () {
 
         projectsServiceMock = jasmine.createSpyObj('projectsService', [
             'getProject', 'setLanguageModelType',
-            'storeSmallLanguageModelConfig', 'storeToyLanguageModelConfig'
+            'storeSmallLanguageModelConfig', 'storeToyLanguageModelConfig', 'storeRemoteLanguageModelConfig'
         ]);
 
         trainingServiceMock = jasmine.createSpyObj('trainingService', [
@@ -48,6 +48,12 @@ describe('LanguageModelController - small model testing', function () {
         ]);
         languageModelServiceMock.getSupportedModels.and.returnValue($q.resolve([]));
         languageModelServiceMock.getAllModels.and.returnValue([]);
+
+        remoteLanguageModelServiceMock = jasmine.createSpyObj('remoteLanguageModelService', [ 'getModels', 'streamCompletion' ]);
+        remoteLanguageModelServiceMock.streamCompletion.and.callFake(function (url, model, messages, temperature, topP, signal, onDelta) {
+            onDelta('remote reply');
+            return Promise.resolve();
+        });
 
         txtServiceMock = jasmine.createSpyObj('txtService', ['getContents']);
 
@@ -68,6 +74,7 @@ describe('LanguageModelController - small model testing', function () {
         $mdDialogMock = jasmine.createSpyObj('$mdDialog', ['show', 'hide', 'cancel']);
 
         $windowMock = jasmine.createSpyObj('$window', ['scrollTo']);
+        $windowMock.AbortController = window.AbortController;
 
         $stateParams = { projectId : 'project1', userId : 'user1' };
     });
@@ -80,6 +87,7 @@ describe('LanguageModelController - small model testing', function () {
             wikipediaService : wikipediaServiceMock,
             weatherService : weatherServiceMock,
             languageModelService : languageModelServiceMock,
+            remoteLanguageModelService : remoteLanguageModelServiceMock,
             txtService : txtServiceMock,
             utilService : utilServiceMock,
             loggerService : loggerServiceMock,
@@ -172,6 +180,130 @@ describe('LanguageModelController - small model testing', function () {
             expect($scope.textgenerated).toBe(true);
             // unlike the toy model, the small model DOES clear the prompt box
             expect($scope.prompt.message).toBe('');
+        });
+
+        it('routes remote projects to oMLX with the saved model and sampling settings', async function () {
+            createReadyController(baseProject({
+                modeltype : 'remote',
+                remote : {
+                    url : 'http://teacher-laptop:8000/v1',
+                    model : 'school-model',
+                    temperature : 0.7,
+                    topp : 0.8
+                }
+            }));
+            $scope.prompt.message = 'hello';
+
+            $scope.testModel();
+            await flushAsync();
+            $timeoutReal.flush();
+
+            var request = remoteLanguageModelServiceMock.streamCompletion.calls.mostRecent();
+            expect(request.args[0]).toBe('http://teacher-laptop:8000/v1');
+            expect(request.args[1]).toBe('school-model');
+            expect(request.args[2].map(function (message) { return message.role; })).toEqual([ 'system', 'user' ]);
+            expect(request.args[3]).toBe(0.7);
+            expect(request.args[4]).toBe(0.8);
+            expect($scope.generatedmessages[$scope.generatedmessages.length - 1].content).toBe('remote reply');
+            expect($scope.generating).toBe(false);
+        });
+
+        it('adds the saved remote initial context to the first user message', async function () {
+            createReadyController(baseProject({
+                modeltype : 'remote',
+                remote : {
+                    url : 'http://teacher-laptop:8000/v1',
+                    model : 'school-model',
+                    temperature : 1,
+                    topp : 1,
+                    initialcontext : {
+                        state : 'provide',
+                        doc : { type : 'text', title : 'class notes', contents : 'Cats are mammals.' }
+                    }
+                }
+            }));
+            $scope.prompt.message = 'What are cats?';
+
+            $scope.testModel();
+            await flushAsync();
+
+            var messages = remoteLanguageModelServiceMock.streamCompletion.calls.mostRecent().args[2];
+            expect(messages[0].content).toContain('Answer only using the provided context.');
+            expect(messages[1]).toEqual({
+                role : 'user',
+                content : 'Question: What are cats?\n\nContext:\nCats are mammals.'
+            });
+        });
+
+        it('passes text selected in the remote context step through saving to the chat request', async function () {
+            var project = baseProject({
+                modeltype : 'remote',
+                remote : {
+                    url : 'http://teacher-laptop:8000/v1', model : 'school-model',
+                    temperature : 0.7, topp : 0.8, initialcontext : { state : 'none' }
+                }
+            });
+            projectsServiceMock.storeRemoteLanguageModelConfig.and.callFake(function (savedProject, config) {
+                // IndexedDB returns a separate object; do not rely on the
+                // controller's in-memory project sharing the stored object.
+                return $q.resolve(angular.extend({}, savedProject, { remote : angular.copy(config) }));
+            });
+            createReadyController(project);
+            $scope.review($scope.PHASES.REMOTE.RAGCONTEXT);
+            $scope.smallModelInitialContextSet('remote');
+            $mdDialogMock.show.and.returnValue($q.resolve({ contents : 'Cats are mammals.' }));
+            $scope.addContextText({}, 'remote');
+            digestTwice();
+            $scope.setProjectReady();
+            digestTwice();
+
+            expect(projectsServiceMock.storeRemoteLanguageModelConfig.calls.mostRecent().args[1].initialcontext)
+                .toEqual({ state : 'provide', doc : { type : 'text', title : 'text', contents : 'Cats are mammals.' } });
+            expect($scope.project.remote.initialcontext.doc.contents).toBe('Cats are mammals.');
+
+            $scope.prompt.message = 'What are cats?';
+            $scope.testModel();
+            await flushAsync();
+
+            var messages = remoteLanguageModelServiceMock.streamCompletion.calls.mostRecent().args[2];
+            expect(messages[0].content).toContain('Answer only using the provided context.');
+            expect(messages[1]).toEqual({
+                role : 'user', content : 'Question: What are cats?\n\nContext:\nCats are mammals.'
+            });
+            // Only the question is shown to the student; the context is still
+            // present in the request sent to the model.
+            expect($scope.generatedmessages[1].render).toBe('What are cats?');
+        });
+
+        it('allows another remote prompt after a failed request without replaying the failed prompt', async function () {
+            var vm = createReadyController(baseProject({
+                modeltype : 'remote',
+                remote : { url : 'http://teacher-laptop:8000/v1', model : 'school-model' }
+            }));
+            remoteLanguageModelServiceMock.streamCompletion.and.returnValue(Promise.reject(new Error('Server unavailable')));
+            $scope.prompt.message = 'first attempt';
+
+            $scope.testModel();
+            await flushAsync();
+
+            expect($scope.generating).toBe(false);
+            expect($scope.streaming).toBe(false);
+            expect(vm.errors[0].message).toBe('Server unavailable');
+            expect($scope.generatedmessages.map(function (message) { return message.role; })).toEqual([ 'system' ]);
+
+            remoteLanguageModelServiceMock.streamCompletion.and.callFake(function (url, model, messages, temperature, topP, signal, onDelta) {
+                onDelta('reply');
+                return Promise.resolve();
+            });
+            $scope.prompt.message = 'try again';
+            $scope.testModel();
+            await flushAsync();
+
+            var messages = remoteLanguageModelServiceMock.streamCompletion.calls.mostRecent().args[2];
+            expect(messages.map(function (message) { return message.content; })).toEqual([
+                jasmine.any(String), 'try again'
+            ]);
+            expect($scope.generating).toBe(false);
         });
 
     });

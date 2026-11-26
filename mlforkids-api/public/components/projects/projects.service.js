@@ -180,6 +180,12 @@
             }
             return browserStorageService.storeToyLanguageModelConfig(project.id, toyConfig);
         }
+        function storeRemoteLanguageModelConfig(project, remoteConfig) {
+            if (project.storage !== 'local' || project.type !== 'language') {
+                return $q.reject(new Error('Unexpected project type'));
+            }
+            return browserStorageService.storeRemoteLanguageModelConfig(project.id, remoteConfig);
+        }
 
 
         function addMetadataToProject(project, key, value) {
@@ -325,6 +331,7 @@
             setLanguageModelType : setLanguageModelType,
             storeSmallLanguageModelConfig : storeSmallLanguageModelConfig,
             storeToyLanguageModelConfig : storeToyLanguageModelConfig,
+            storeRemoteLanguageModelConfig : storeRemoteLanguageModelConfig,
 
             shareProject : shareProject,
 

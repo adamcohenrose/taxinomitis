@@ -549,6 +549,14 @@
                 return projectObject;
             });
         }
+        async function storeRemoteLanguageModelConfig(projectId, remote) {
+            loggerService.debug('[ml4kstorage] storeRemoteLanguageModelConfig');
+
+            return updateLocalProject(projectId, (projectObject) => {
+                projectObject.remote = remote;
+                return projectObject;
+            });
+        }
 
 
 
@@ -1004,6 +1012,7 @@
             setLanguageModelType,
             storeSmallLanguageModelConfig,
             storeToyLanguageModelConfig,
+            storeRemoteLanguageModelConfig,
 
             getTrainingData,
             countTrainingData,
