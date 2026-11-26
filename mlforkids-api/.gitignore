@@ -20,6 +20,7 @@ ops/slack-credentials.env
 ops/openwhisk-credentials.env
 ops/spotify-credentials.env
 ops/cloudflare-credentials.env
+.env
 
 ops/previous-prod
 public/scratchx

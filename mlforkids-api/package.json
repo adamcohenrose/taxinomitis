@@ -2,7 +2,7 @@
   "name": "ml-for-kids",
   "version": "0.0.1",
   "scripts": {
-    "start": "node dist/lib/app.js",
+    "start": "node --env-file-if-exists=.env dist/lib/app.js",
     "lint": "oxlint",
     "coverage": "nyc --reporter=html node --test --test-concurrency=1 --test-timeout=120000 --test-reporter=spec dist/tests/**/*.js",
     "codeenginejob": "node dist/lib/batch.js",

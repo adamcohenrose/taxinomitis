@@ -54,7 +54,15 @@ There are also a couple of environment variables used by the web server.
 | `PORT` | Port number for the web site and admin API | `3000`      |
 | `HOST` | Hostname / address                         | `localhost` |
 
-So, you could do something like this:
+You can put these values in `mlforkids-api/.env`. Copy the example file, edit it if needed, and run `npm start` from `mlforkids-api`:
+
+```sh
+cd mlforkids-api
+cp .env.example .env
+npm start
+```
+
+The `.env` file is local-only and is ignored by Git. Alternatively, export the variables in your shell:
 
 ```sh
 export POSTGRESQLHOST=localhost
