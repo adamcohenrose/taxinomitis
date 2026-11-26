@@ -9,14 +9,14 @@ module.exports = function (config) {
             // group panels in teacher_students) only show up because of how
             // Bootstrap's real jQuery event delegation interacts with
             // Angular's DOM updates, and can't be caught with jqLite alone.
-            'public/bower_components/jquery/dist/jquery.js',
-            'public/bower_components/bootstrap/dist/js/bootstrap.js',
+            'node_modules/jquery/dist/jquery.js',
+            'node_modules/bootstrap/dist/js/bootstrap.js',
 
-            'public/bower_components/angular/angular.js',
+            'node_modules/angular/angular.js',
             // real ui-router, so that the projects page's same-state
             // navigation (projects -> projects, with a different highlight id)
             // can be exercised for real rather than against a mocked $state
-            'public/bower_components/angular-ui-router/release/angular-ui-router.js',
+            'node_modules/@uirouter/angularjs/release/angular-ui-router.js',
             'node_modules/angular-mocks/angular-mocks.js',
 
             // project archives are zip files. in production JSZip is lazy
@@ -78,6 +78,7 @@ module.exports = function (config) {
             // ng-click expression, so the clone parity spec evaluates that
             // real expression rather than duplicating the field list
             'public/components/newproject/newproject.html',
+            'public/components/languagemodel/languagemodel.html',
 
             // output from the server's countNgrams() - fetched by
             // ngrams.service.spec.js to check the browser gives the same results
@@ -91,7 +92,8 @@ module.exports = function (config) {
             'public/components/teacher_restrictions/teacher_restrictions.html' : ['ng-html2js'],
             'public/components/teacher_students/teacher_students.html' : ['ng-html2js'],
             'public/components/training/training.html' : ['ng-html2js'],
-            'public/components/newproject/newproject.html' : ['ng-html2js']
+            'public/components/newproject/newproject.html' : ['ng-html2js'],
+            'public/components/languagemodel/languagemodel.html' : ['ng-html2js']
         },
 
         ngHtml2JsPreprocessor : {

@@ -64,6 +64,8 @@ npm start
 
 The `.env` file is local-only and is ignored by Git. Alternatively, export the variables in your shell:
 
+Local builds use Cloudflare's test keys for the **Try it now** flow.
+
 ```sh
 export POSTGRESQLHOST=localhost
 export POSTGRESQLPORT=5432
@@ -82,7 +84,8 @@ This step will require Internet access.
 ```sh
 cd mlforkids-api
 npm install
-npm run build_notest
+npm run uidependencies
+npm run build:notest
 ```
 
 ## Step 5 (option b) - Build the code and run the tests
@@ -97,7 +100,9 @@ psql -U ml4kdbuser -d mlforkidsdb -f ./mlforkids-api/sql/testdata.sql
 Then build and run the tests
 ```sh
 cd mlforkids-api
+npm run uidependencies
 npm run build
+npm test
 ```
 
 (Note: Test data will be visible in the UI if you use the same database for tests and the live site)

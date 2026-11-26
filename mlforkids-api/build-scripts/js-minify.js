@@ -46,9 +46,15 @@ if (DEPLOYMENT === 'machinelearningforkids.co.uk') {
             path.join(baseDir, 'public', 'cloudflare-dev-variables.js'),
         ];
     }
+} else if (DEPLOYMENT === 'local') {
+    additionalVariables = [
+        path.join(baseDir, 'public', 'auth0-dev-variables.js'),
+        path.join(baseDir, 'public', 'cloudflare-local-variables.js')
+    ];
 } else {
     additionalVariables = [
-        path.join(baseDir, 'public', 'auth0-dev-variables.js')
+        path.join(baseDir, 'public', 'auth0-dev-variables.js'),
+        path.join(baseDir, 'public', 'cloudflare-dev-variables.js')
     ];
 }
 
@@ -136,5 +142,3 @@ for (const file of webJsFiles) {
         process.exit(1);
     }
 })();
-
-
